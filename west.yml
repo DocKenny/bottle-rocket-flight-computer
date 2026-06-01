@@ -1,0 +1,133 @@
+manifest:
+  self:
+    # This repository should be cloned to
+    path: project
+  remotes:
+    - name: nrfconnect
+      url-base: https://github.com/nrfconnect
+    - name: irnas
+      url-base: https://github.com/irnas
+  projects:
+    # the NCS repository
+    - name: nrf
+      repo-path: sdk-nrf
+      remote: nrfconnect
+      # IMPORTANT: When changing NCS revision you need to change revision of
+      # Zephyr project below so it matches.
+      revision: v3.1.0
+      import:
+        name-allowlist:
+          # Ignore NCS private repos, keep this list sorted alphabetically.
+          # - azure-sdk-for-c
+          # - bme68x
+          # - bsec
+          # - bsim
+          # - cirrus
+          # - cjson
+          - cmock
+          # - coremark
+          # - doc-internal
+          # - dragoon
+          # - find-my
+          # - hostap
+          # - libmodem
+          # - matter
+          - mbedtls # Required for nRF9160 and nRF7002 projects, can be disabled for others.
+          - mcuboot
+          # - memfault-firmware-sdk
+          # - nrf-802154
+          - nrfxlib
+          - oberon-psa-crypto
+          # - openthread
+          - psa-arch-tests
+          - qcbor
+          - trusted-firmware-m
+          # - wfa-qt-control-app
+          # Ignore zephyr repo as it is added below manually
+          # - zephyr
+    - name: zephyr
+      remote: nrfconnect
+      repo-path: sdk-zephyr
+      revision: ncs-v3.1.0
+      import:
+        # In addition to the zephyr repository itself, NCS also
+        # imports the contents of zephyr/west.yml at the above
+        # revision. Only the projects explicitly named in the
+        # following allowlist are imported.
+        #
+        # Note that the zephyr west extensions (like 'build', 'flash',
+        # 'debug', etc.) are automatically provided by this import, so
+        # there's no need to add a redundant west-commands: key for
+        # the zephyr project.
+        #
+        # Please keep this list sorted alphabetically.
+        name-allowlist:
+          # - acpica
+          # - babblesim_base
+          # - babblesim_ext_2G4_channel_multiatt
+          # - babblesim_ext_2G4_channel_NtNcable
+          # - babblesim_ext_2G4_device_burst_interferer
+          # - babblesim_ext_2G4_device_playback
+          # - babblesim_ext_2G4_device_WLAN_actmod
+          # - babblesim_ext_2G4_libPhyComv1
+          # - babblesim_ext_2G4_modem_BLE_simple
+          # - babblesim_ext_2G4_modem_magic
+          # - babblesim_ext_2G4_phy_v1
+          # - babblesim_ext_libCryptov1
+          # - bsim
+          - cmsis
+          - cmsis_6
+          # - cmsis-dsp
+          # - cmsis-nn
+          # - edtt
+          - fatfs
+          # - hal_adi
+          # - hal_afbr
+          # - hal_ambiq
+          # - hal_atmel
+          # - hal_bouffalolab
+          # - hal_espressif
+          # - hal_ethos_u
+          # - hal_gigadevice
+          # - hal_infineon
+          # - hal_intel
+          # - hal_microchip
+          - hal_nordic
+          # - hal_nuvoton
+          # - hal_nxp
+          # - hal_openisa
+          # - hal_quicklogic
+          # - hal_renesas
+          # - hal_rpi_pico
+          # - hal_silabs
+          - hal_st # Hal for ST's sensors, not for MCU's
+          # - hal_stm32
+          # - hal_tdk
+          # - hal_telink
+          # - hal_ti
+          # - hal_wch
+          # - hal_wurthelektronik
+          # - hal_xtensa
+          - hostap
+          # - liblc3
+          # - libmctp
+          # - libmetal
+          # - littlefs
+          # - loramac-node
+          # - lvgl
+          # - mbedtls
+          # - mcuboot # Do not use this one, Nordic has it's own fork.
+          # - mipi-sys-t
+          # - net-tools
+          - nrf_hw_models
+          # - nrf_wifi # Enable for nrf7002 WiFi SOC
+          # - open-amp
+          # - openthread
+          # - percepio
+          - picolibc
+          - segger
+          - tinycrypt
+          # - trusted-firmware-a
+          # - trusted-firmware-m
+          # - uoscore-uedhoc
+          - zcbor
