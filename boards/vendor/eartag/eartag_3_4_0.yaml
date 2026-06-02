@@ -1,13 +1,13 @@
 # Copyright (c) 2021 Nordic Semiconductor ASA
 # SPDX-License-Identifier: Apache-2.0
 
-identifier: custom_board@1.4.0
-name: Custom-Board
+identifier: eartag@3.4.0
+name: eartag
 vendor: vendor
 type: mcu
 arch: arm
-ram: 256
-flash: 1024
+ram: 24
+flash: 192
 toolchain:
   - zephyr
   - gnuarmemb

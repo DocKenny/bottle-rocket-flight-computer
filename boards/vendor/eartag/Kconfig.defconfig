@@ -1,6 +1,9 @@
 # Copyright (c) 2021 Nordic Semiconductor ASA
 # SPDX-License-Identifier: Apache-2.0
 
-if BOARD_CUSTOM_BOARD
+if BOARD_EARTAG
 
-endif # BOARD_CUSTOM_BOARD
+config BOARD
+    default "eartag"
+
+endif # BOARD_EARTAG

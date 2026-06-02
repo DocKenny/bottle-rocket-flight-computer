@@ -1,0 +1,73 @@
+/dts-v1/;
+#include <nordic/nrf52811_qfaa.dtsi>
+#include "eartag-pinctrl.dtsi"
+
+/ {
+    model = "EarTag";
+    compatible = "telespor,ear_tag";
+
+    chosen {
+        zephyr,sram = &sram0;
+        zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+    };
+
+    aliases {
+        accel0 = &lis2dw12;
+    };
+};
+
+&gpio0 {
+    status = "okay";
+};
+
+&gpiote {
+    status = "okay";
+};
+
+
+&i2c0 {
+    compatible = "nordic,nrf-twim";
+    status = "okay";
+    pinctrl-0 = <&i2c0_default>;
+    pinctrl-1 = <&i2c0_sleep>;
+    pinctrl-names = "default", "sleep";
+    clock-frequency = <I2C_BITRATE_FAST>;
+
+    lis2dw12: lis2dw12@25 {
+        compatible = "st,lis2dw12";
+        reg = <0x25>;
+        label = "LIS2DW12";
+
+        irq-gpios = <&gpio0 16 (GPIO_ACTIVE_HIGH)>,
+                    <&gpio0 20 (GPIO_ACTIVE_HIGH)>;
+    };
+};
+
+&flash0 {
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        boot_partition: partition@0 {
+            label = "mcuboot";
+            reg = <0x00000000 0xc000>; /* 48 KB */
+        };
+
+        slot0_partition: partition@c000 {
+            label = "image-0";
+            reg = <0x0000c000 0x10000>; /* 64 KB */
+        };
+
+        slot1_partition: partition@1c000 {
+            label = "image-1";
+            reg = <0x0001c000 0x10000>; /* 64 KB */
+        };
+
+        storage_partition: partition@2c000 {
+            label = "storage";
+            reg = <0x0002c000 0x4000>; /* 16 KB */
+        };
+    };
+};
