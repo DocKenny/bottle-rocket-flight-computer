@@ -5,9 +5,7 @@ common:
   tags:
     - release
   platform_allow:
-    - custom_board@1.0.0
-    - custom_board@1.4.0
-    - nrf52840dk/nrf52840
+    - eartag@3.4.0
 
 tests:
   app.prod:
