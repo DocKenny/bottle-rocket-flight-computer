@@ -15,12 +15,6 @@ LOG_MODULE_REGISTER(main);
 
 #define SLEEP_TIME_MS (1 * MSEC_PER_SEC)
 
-/*
- * A build error on this line means your board is unsupported.
- * See the sample documentation for information on how to fix this.
- */
-static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
-
 /**
  * @brief Print firmware version and other useful information.
  */
@@ -38,27 +32,9 @@ int main(void)
 {
 	prv_boot_msg();
 
-	int err;
-
-	if (!device_is_ready(led.port)) {
-		return -1;
-	}
-
-	err = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
-	if (err) {
-		LOG_ERR("Unable to configure LED GPIO, err: %d", err);
-		return -1;
-	}
-
 	int count = 0;
 	while (1) {
 		LOG_INF("Hello world! Count %u", count++);
-
-		err = gpio_pin_toggle_dt(&led);
-		if (err) {
-			LOG_ERR("Unable to toggle LED GPIO, err: %d", err);
-			return -1;
-		}
 		k_sleep(K_MSEC(SLEEP_TIME_MS));
 	}
 }
