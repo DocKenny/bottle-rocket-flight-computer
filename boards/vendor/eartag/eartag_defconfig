@@ -7,18 +7,6 @@ CONFIG_ARM_MPU=y
 # Enable hardware stack protection
 CONFIG_HW_STACK_PROTECTION=y
 
-# Enable RTT
-CONFIG_CONSOLE=y
-CONFIG_RTT_CONSOLE=y
-CONFIG_USE_SEGGER_RTT=y
-
 # enable GPIO
 CONFIG_GPIO=y
-
-# enable uart driver
-CONFIG_SERIAL=n
-
-# enable console
-CONFIG_UART_CONSOLE=n
-
 CONFIG_PINCTRL=y

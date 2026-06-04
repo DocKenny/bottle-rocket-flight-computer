@@ -16,12 +16,6 @@ tests:
     extra_overlay_confs:
       - with_mcuboot.conf
 
-  app.uart:
-    extra_overlay_confs:
-      - debug.conf
-      - uart.conf
-      - with_mcuboot.conf
-
   app.debug:
     extra_overlay_confs:
       - debug.conf
