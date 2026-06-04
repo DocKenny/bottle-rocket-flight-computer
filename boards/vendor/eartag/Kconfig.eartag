@@ -1,8 +1,4 @@
 config BOARD_EARTAG
 	bool
 	select SOC_FAMILY_NORDIC_NRF
-	select SOC_NRF52811
-
-config NUM_IRQS
-	int
-	default 32
+	select SOC_NRF52811_QFAA
