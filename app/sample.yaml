@@ -13,8 +13,6 @@ tests:
   app.prod:
     tags:
       - quick-build
-    extra_overlay_confs:
-      - with_mcuboot.conf
 
   app.debug:
     extra_overlay_confs:
