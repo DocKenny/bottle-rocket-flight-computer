@@ -1,0 +1,4 @@
+config BOARD_EARTAG
+	bool
+	select SOC_FAMILY_NORDIC_NRF
+	select SOC_NRF52811_QFAA
