@@ -5,6 +5,7 @@
  */
 
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/sensor.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -13,7 +14,7 @@
 
 LOG_MODULE_REGISTER(main);
 
-#define SLEEP_TIME_MS (1 * MSEC_PER_SEC)
+#define SLEEP_TIME_MS (2 * MSEC_PER_SEC)
 
 /**
  * @brief Print firmware version and other useful information.
@@ -32,9 +33,24 @@ int main(void)
 {
 	prv_boot_msg();
 
-	int count = 0;
+	const struct device *acc = DEVICE_DT_GET(DT_ALIAS(accel0));
+	if (!device_is_ready(acc)) {
+		LOG_ERR("Accelerometer not ready");
+		return 0;
+	}
+
 	while (1) {
-		LOG_INF("Hello world! Count %u", count++);
+		struct sensor_value accel[3];
+		if (sensor_sample_fetch_chan(acc, SENSOR_CHAN_ACCEL_XYZ) < 0) {
+			LOG_ERR("Accelerometer sample fetch error\n");
+			return 0;
+		}
+
+		sensor_channel_get(acc, SENSOR_CHAN_ACCEL_XYZ, accel);
+		LOG_INF("Acceleration (m/s^2): x: %.3f, y: %.3f, z: %.3f\n",
+			sensor_value_to_double(&accel[0]), sensor_value_to_double(&accel[1]),
+			sensor_value_to_double(&accel[2]));
+
 		k_sleep(K_MSEC(SLEEP_TIME_MS));
 	}
 }
