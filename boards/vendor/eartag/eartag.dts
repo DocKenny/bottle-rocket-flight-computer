@@ -40,6 +40,7 @@
         status = "okay";
         power-mode = <LIS2DW12_DT_HP_MODE>;
         odr = <800>; /* Max sample rate for interrupt mode */
+        wakeup-duration = <2>;  /* ODR cycles above threshold before triggering */
         irq-gpios = <&gpio0 16 (GPIO_ACTIVE_HIGH)>,
                     <&gpio0 20 (GPIO_ACTIVE_HIGH)>;
     };
