@@ -3,10 +3,42 @@ source "$ZEPHYR_BASE/Kconfig.zephyr"
 
 config DATA_PROCESSING_THREAD_STACK_SIZE
     int "Data processing thread stack size"
-    default 1024
+    default 2048
 
 config DATA_PROCESSING_THREAD_PRIORITY
     int "Data processing thread priority"
-    default 1
+    default 5
+
+config BLE_ADVERTISEMENT_TIME_SEC
+    int "Bluetooth advertisement time in seconds"
+    default 300
+
+config FLIGHT_STATIONARY_WINDOW_MS
+    int "Stationary detection window (ms)"
+    default 3000
+    help
+      The continuous duration in milliseconds that the accelerometer
+      magnitude must remain stable to trigger a landing event.
+
+config FLIGHT_G_TARGET_X100
+    int "Gravity target multiplied by 100"
+    default 891
+    help
+      The target G magnitude (scaled by 100). E.g., 891 represents 8.91 m/s^2.
+
+config FLIGHT_STATIONARY_TOLERANCE_X100
+    int "Stationary tolerance multiplied by 100"
+    default 30
+    help
+      The allowable variance above or below the G target (scaled by 100).
+      E.g., 30 represents +/- 0.30 m/s^2 variance.
+
+config FLIGHT_WAKEUP_THRESHOLD_UG
+    int "Wake-up motion threshold (micro-Gs)"
+    default 500000
+    help
+      The acceleration threshold in micro-Gs required to wake the sensor
+      and trigger the flight state.
+      1000000 uG = 1G.
 
 endmenu
