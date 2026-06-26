@@ -42,6 +42,8 @@ static const struct device *prv_acc = DEVICE_DT_GET(DT_ALIAS(accel0));
 
 static enum flight_state_t prv_flight_state = STATE_IDLE;
 
+static uint16_t prv_launch_count = 0;
+
 struct sensor_trigger data_trig = {
 	.type = SENSOR_TRIG_DATA_READY,
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
@@ -52,11 +54,12 @@ struct sensor_trigger motion_trig = {
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
 };
 
-static const struct bt_data ad[] = {
+static struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
 	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, (sizeof(CONFIG_BT_DEVICE_NAME) - 1)),
+	/* Append launch count as 2 bytes */
+	BT_DATA(BT_DATA_MANUFACTURER_DATA, (uint8_t *)&prv_launch_count, sizeof(prv_launch_count)),
 };
-
 /**
  * @brief Print firmware version and other useful information.
  */
@@ -160,7 +163,6 @@ static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 	}
 }
 
-static uint8_t flight_state = STATE_IDLE;
 static void prv_state_machine(void)
 {
 	switch (prv_flight_state) {
@@ -180,6 +182,7 @@ static void prv_state_machine(void)
 		sensor_trigger_set(prv_acc, &motion_trig, NULL);
 		k_mutex_unlock(&sensor_mutex);
 
+		prv_launch_count++;
 		prv_flight_state = STATE_FLIGHT;
 
 		break;
@@ -208,6 +211,7 @@ static void prv_state_machine(void)
 		int err = bt_le_adv_start(BT_LE_ADV_NCONN, ad, ARRAY_SIZE(ad), NULL, 0);
 		if (err) {
 			LOG_ERR("Advertising failed to start (err %d)", err);
+			prv_flight_state = STATE_LANDED;
 		} else {
 			LOG_INF("BLE Advertising started...");
 		}
