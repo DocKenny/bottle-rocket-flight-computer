@@ -50,6 +50,11 @@ struct sensor_trigger motion_trig = {
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
 };
 
+static const struct bt_data ad[] = {
+	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, (sizeof(CONFIG_BT_DEVICE_NAME) - 1)),
+};
+
 /**
  * @brief Print firmware version and other useful information.
  */
@@ -207,8 +212,23 @@ static void prv_state_machine(void)
 	case STATE_LANDED:
 		LOG_INF("State 2: Landed");
 
+		int err = bt_le_adv_start(BT_LE_ADV_NCONN, ad, ARRAY_SIZE(ad), NULL, 0);
+		if (err) {
+			LOG_ERR("Advertising failed to start (err %d)", err);
+		} else {
+			LOG_INF("BLE Advertising started...");
+		}
+
 		k_msleep(CONFIG_BLE_ADVERTISEMENT_TIME_SEC *
 			 MSEC_PER_SEC); // Sleep before resetting to idle
+
+		/* Stop advertising before cycling back to idle */
+		err = bt_le_adv_stop();
+		if (err) {
+			LOG_ERR("Advertising failed to stop (err %d)", err);
+		} else {
+			LOG_INF("BLE Advertising stopped.");
+		}
 
 		/* Reset semaphores in case hard landing triggered motion interrupt */
 		k_sem_reset(&motion_sem);
@@ -244,14 +264,20 @@ int main(void)
 		LOG_ERR("I2C bus for accelerometer not ready");
 	}
 
+	/* Initialize Bluetooth */
+	int rc = bt_enable(NULL);
+	if (rc) {
+		LOG_ERR("Bluetooth init failed (err %d)", rc);
+		return 0;
+	}
+
 	k_msleep(50);
 
 	struct sensor_value threshold;
 	sensor_ug_to_ms2(FLIGHT_WAKEUP_THRESHOLD_UG, &threshold);
 
 	k_mutex_lock(&sensor_mutex, K_FOREVER);
-	int rc = sensor_attr_set(prv_acc, SENSOR_CHAN_ACCEL_XYZ, SENSOR_ATTR_UPPER_THRESH,
-				 &threshold);
+	rc = sensor_attr_set(prv_acc, SENSOR_CHAN_ACCEL_XYZ, SENSOR_ATTR_UPPER_THRESH, &threshold);
 	if (rc != 0) {
 		LOG_ERR("Failed to set wakeup threshold: %d", rc);
 	}
