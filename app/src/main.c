@@ -5,7 +5,9 @@
  */
 
 #include <math.h>
+#include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -16,6 +18,8 @@
 LOG_MODULE_REGISTER(main);
 
 #define SLEEP_TIME_MS (2 * MSEC_PER_SEC)
+
+#define LIS2DW12_REG_CTRL7 0x3F
 
 #define STATE_IDLE   0x00
 #define STATE_FLIGHT 0x01
@@ -29,6 +33,8 @@ LOG_MODULE_REGISTER(main);
 K_SEM_DEFINE(data_ready_sem, 0, 1);
 K_SEM_DEFINE(motion_sem, 0, 1);
 K_SEM_DEFINE(stationary_sem, 0, 1);
+
+K_MUTEX_DEFINE(sensor_mutex);
 
 static const struct device *prv_acc = DEVICE_DT_GET(DT_ALIAS(accel0));
 
@@ -83,7 +89,7 @@ static void prv_detect_stationary(const float magnitude)
 		return;
 	}
 
-	/* Evaluate if magnitude falls within our resting gravity tolerance window */
+	/* Evaluate if magnitude falls within resting gravity tolerance window */
 	bool is_currently_still = (magnitude >= (G_TARGET - STATIONARY_TOLERANCE)) &&
 				  (magnitude <= (G_TARGET + STATIONARY_TOLERANCE));
 
@@ -117,55 +123,86 @@ static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 
 	LOG_INF("DATA PROCESSING THREAD");
 	while (1) {
+		// Keep the thread entirely asleep if the state machine is not in STATE_FLIGHT
+		if (!prv_track_stationary) {
+			k_msleep(50);
+			continue;
+		}
+
 		k_sem_take(&data_ready_sem, K_FOREVER);
+
+		k_mutex_lock(&sensor_mutex, K_FOREVER);
 
 		int rc = sensor_sample_fetch_chan(prv_acc, SENSOR_CHAN_ACCEL_XYZ);
 		if (rc) {
 			LOG_ERR("Failed to fetch sample: %d", rc);
+			k_mutex_unlock(&sensor_mutex);
 			continue;
 		}
 
 		struct sensor_value accel_val[3];
 		sensor_channel_get(prv_acc, SENSOR_CHAN_ACCEL_XYZ, accel_val);
 
-		double x = sensor_value_to_double(&accel_val[0]);
-		double y = sensor_value_to_double(&accel_val[1]);
-		double z = sensor_value_to_double(&accel_val[2]);
+		k_mutex_unlock(&sensor_mutex);
+
+		double x = accel_val[0].val1 + (accel_val[0].val2 / 1000000.0);
+		double y = accel_val[1].val1 + (accel_val[1].val2 / 1000000.0);
+		double z = accel_val[2].val1 + (accel_val[2].val2 / 1000000.0);
 		float magnitude = (float)sqrt((x * x) + (y * y) + (z * z));
 
 		prv_detect_stationary(magnitude);
 	}
 }
 
+static uint8_t flight_state = STATE_IDLE;
 static void prv_state_machine(void)
 {
-	static uint8_t flight_state = STATE_IDLE;
 
 	switch (flight_state) {
 	case STATE_IDLE:
 		LOG_INF("State 0: Idle");
 
-		k_sem_reset(&motion_sem);
+		prv_track_stationary = false;
+
+		k_mutex_lock(&sensor_mutex, K_FOREVER);
 		sensor_trigger_set(prv_acc, &motion_trig, prv_trigger_handler);
+		k_mutex_unlock(&sensor_mutex);
+
+		k_msleep(100);
+		k_sem_reset(&motion_sem);
 
 		k_sem_take(&motion_sem, K_FOREVER);
 
+		k_mutex_lock(&sensor_mutex, K_FOREVER);
 		sensor_trigger_set(prv_acc, &motion_trig, NULL);
+		k_mutex_unlock(&sensor_mutex);
+
 		flight_state = STATE_FLIGHT;
 
 		break;
 	case STATE_FLIGHT:
 		LOG_INF("State 1: Flight");
-		sensor_trigger_set(prv_acc, &data_trig, prv_trigger_handler);
 
+		k_sem_reset(&data_ready_sem);
+		k_sem_reset(&stationary_sem);
+
+		k_mutex_lock(&sensor_mutex, K_FOREVER);
+		sensor_trigger_set(prv_acc, &data_trig, prv_trigger_handler);
+		k_mutex_unlock(&sensor_mutex);
+
+		// NOW enable the background thread processing safely
 		prv_track_stationary = true;
 
 		LOG_INF("Waiting for stationary trigger");
 		k_sem_take(&stationary_sem, K_FOREVER);
 
-		sensor_trigger_set(prv_acc, &data_trig, NULL);
-		flight_state = STATE_LANDED;
+		prv_track_stationary = false;
 
+		k_mutex_lock(&sensor_mutex, K_FOREVER);
+		sensor_trigger_set(prv_acc, &data_trig, NULL);
+		k_mutex_unlock(&sensor_mutex);
+
+		flight_state = STATE_LANDED;
 		break;
 	case STATE_LANDED:
 		LOG_INF("State 2: Landed");
@@ -195,13 +232,26 @@ int main(void)
 		return 0;
 	}
 
+	/* FIX: clear CTRL7 reg in order to fix immediate movement trigger bug */
+	const struct i2c_dt_spec i2c_bus = I2C_DT_SPEC_GET(DT_ALIAS(accel0));
+
+	if (device_is_ready(i2c_bus.bus)) {
+		int err = i2c_reg_write_byte_dt(&i2c_bus, LIS2DW12_REG_CTRL7, 0x00);
+		if (err) {
+			LOG_WRN("Failed to force reset CTRL7 register: %d", err);
+		}
+	} else {
+		LOG_ERR("I2C bus for accelerometer not ready");
+	}
+
 	k_msleep(50);
 
-	int rc;
 	struct sensor_value threshold;
 	sensor_ug_to_ms2(FLIGHT_WAKEUP_THRESHOLD_UG, &threshold);
 
-	rc = sensor_attr_set(prv_acc, SENSOR_CHAN_ACCEL_XYZ, SENSOR_ATTR_UPPER_THRESH, &threshold);
+	k_mutex_lock(&sensor_mutex, K_FOREVER);
+	int rc = sensor_attr_set(prv_acc, SENSOR_CHAN_ACCEL_XYZ, SENSOR_ATTR_UPPER_THRESH,
+				 &threshold);
 	if (rc != 0) {
 		LOG_ERR("Failed to set wakeup threshold: %d", rc);
 	}
@@ -209,6 +259,7 @@ int main(void)
 	struct sensor_value dummy_val[3];
 	sensor_sample_fetch_chan(prv_acc, SENSOR_CHAN_ACCEL_XYZ);
 	sensor_channel_get(prv_acc, SENSOR_CHAN_ACCEL_XYZ, dummy_val);
+	k_mutex_unlock(&sensor_mutex);
 
 	LOG_INF("STARTING STATE MACHINE");
 	while (1) {

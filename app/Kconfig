@@ -22,16 +22,16 @@ config FLIGHT_STATIONARY_WINDOW_MS
 
 config FLIGHT_G_TARGET_X100
     int "Gravity target multiplied by 100"
-    default 891
+    default 981
     help
-      The target G magnitude (scaled by 100). E.g., 891 represents 8.91 m/s^2.
+      The target G magnitude (scaled by 100). E.g., 981 represents 9.81 m/s^2.
 
 config FLIGHT_STATIONARY_TOLERANCE_X100
     int "Stationary tolerance multiplied by 100"
-    default 30
+    default 40
     help
       The allowable variance above or below the G target (scaled by 100).
-      E.g., 30 represents +/- 0.30 m/s^2 variance.
+      E.g., 40 represents +/- 0.40 m/s^2 variance.
 
 config FLIGHT_WAKEUP_THRESHOLD_UG
     int "Wake-up motion threshold (micro-Gs)"
