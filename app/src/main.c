@@ -40,6 +40,8 @@ static const struct device *prv_acc = DEVICE_DT_GET(DT_ALIAS(accel0));
 
 static volatile bool prv_track_stationary = false;
 
+static uint16_t prv_launch_count = 0;
+
 struct sensor_trigger data_trig = {
 	.type = SENSOR_TRIG_DATA_READY,
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
@@ -50,11 +52,12 @@ struct sensor_trigger motion_trig = {
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
 };
 
-static const struct bt_data ad[] = {
+static struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
 	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, (sizeof(CONFIG_BT_DEVICE_NAME) - 1)),
+	/* Append launch count as 2 bytes */
+	BT_DATA(BT_DATA_MANUFACTURER_DATA, (uint8_t *)&prv_launch_count, sizeof(prv_launch_count)),
 };
-
 /**
  * @brief Print firmware version and other useful information.
  */
@@ -182,6 +185,7 @@ static void prv_state_machine(void)
 		sensor_trigger_set(prv_acc, &motion_trig, NULL);
 		k_mutex_unlock(&sensor_mutex);
 
+		prv_launch_count++;
 		flight_state = STATE_FLIGHT;
 
 		break;
