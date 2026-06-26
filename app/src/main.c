@@ -163,6 +163,7 @@ static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 	}
 }
 
+static uint8_t flight_state = STATE_IDLE;
 static void prv_state_machine(void)
 {
 	switch (prv_flight_state) {
@@ -274,7 +275,8 @@ int main(void)
 	sensor_ug_to_ms2(FLIGHT_WAKEUP_THRESHOLD_UG, &threshold);
 
 	k_mutex_lock(&sensor_mutex, K_FOREVER);
-	rc = sensor_attr_set(prv_acc, SENSOR_CHAN_ACCEL_XYZ, SENSOR_ATTR_UPPER_THRESH, &threshold);
+	rc = sensor_attr_set(prv_acc, SENSOR_CHAN_ACCEL_XYZ, SENSOR_ATTR_UPPER_THRESH,
+				 &threshold);
 	if (rc != 0) {
 		LOG_ERR("Failed to set wakeup threshold: %d", rc);
 	}
