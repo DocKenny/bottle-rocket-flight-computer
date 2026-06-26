@@ -46,6 +46,8 @@ static uint16_t prv_launch_count = 0;
 
 static float prv_g_target = ((float)CONFIG_FLIGHT_G_TARGET_X100 / 100.0f);
 
+static uint16_t prv_launch_count = 0;
+
 struct sensor_trigger data_trig = {
 	.type = SENSOR_TRIG_DATA_READY,
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
