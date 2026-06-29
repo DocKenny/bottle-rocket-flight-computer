@@ -42,6 +42,8 @@ static volatile bool prv_track_stationary = false;
 
 static uint16_t prv_launch_count = 0;
 
+static float prv_g_target = ((float)CONFIG_FLIGHT_G_TARGET_X100 / 100.0f);
+
 struct sensor_trigger data_trig = {
 	.type = SENSOR_TRIG_DATA_READY,
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
@@ -98,8 +100,8 @@ static void prv_detect_stationary(const float magnitude)
 	}
 
 	/* Evaluate if magnitude falls within resting gravity tolerance window */
-	bool is_currently_still = (magnitude >= (G_TARGET - STATIONARY_TOLERANCE)) &&
-				  (magnitude <= (G_TARGET + STATIONARY_TOLERANCE));
+	bool is_currently_still = (magnitude >= (prv_g_target - STATIONARY_TOLERANCE)) &&
+				  (magnitude <= (prv_g_target + STATIONARY_TOLERANCE));
 
 	if (is_currently_still) {
 		if (!was_still) {
@@ -162,6 +164,42 @@ static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 	}
 }
 
+static void prv_calibrate_resting_g(void)
+{
+	LOG_INF("Calibrating baseline gravity. Keep device still");
+
+	double sum_magnitude = 0.0;
+	const uint8_t samples = 20;
+	uint8_t valid_samples = 0;
+
+	for (int i = 0; i < samples; i++) {
+		k_mutex_lock(&sensor_mutex, K_FOREVER);
+		if (sensor_sample_fetch_chan(prv_acc, SENSOR_CHAN_ACCEL_XYZ) == 0) {
+			struct sensor_value accel_val[3];
+			sensor_channel_get(prv_acc, SENSOR_CHAN_ACCEL_XYZ, accel_val);
+
+			double x = accel_val[0].val1 + (accel_val[0].val2 / 1000000.0);
+			double y = accel_val[1].val1 + (accel_val[1].val2 / 1000000.0);
+			double z = accel_val[2].val1 + (accel_val[2].val2 / 1000000.0);
+
+			sum_magnitude += sqrt((x * x) + (y * y) + (z * z));
+			valid_samples++;
+		}
+		k_mutex_unlock(&sensor_mutex);
+		k_msleep(10);
+	}
+
+	if (valid_samples > 0) {
+		prv_g_target = (float)(sum_magnitude / valid_samples);
+		LOG_INF("Calibration complete. baseline G set to: %.3f m/s^2",
+			(double)prv_g_target);
+	} else {
+		prv_g_target = ((float)CONFIG_FLIGHT_G_TARGET_X100 / 100.0f);
+		LOG_WRN("Calibration failed! Using Kconfig default: %.3f m/s^2",
+			(double)prv_g_target);
+	}
+}
+
 static void prv_state_machine(void)
 {
 	static uint8_t flight_state = STATE_IDLE;
@@ -171,6 +209,8 @@ static void prv_state_machine(void)
 		LOG_INF("State 0: Idle");
 
 		prv_track_stationary = false;
+
+		prv_calibrate_resting_g();
 
 		k_mutex_lock(&sensor_mutex, K_FOREVER);
 		sensor_trigger_set(prv_acc, &motion_trig, prv_trigger_handler);
