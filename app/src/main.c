@@ -44,6 +44,8 @@ static enum flight_state_t prv_flight_state = STATE_IDLE;
 
 static uint16_t prv_launch_count = 0;
 
+static float prv_g_target = ((float)CONFIG_FLIGHT_G_TARGET_X100 / 100.0f);
+
 struct sensor_trigger data_trig = {
 	.type = SENSOR_TRIG_DATA_READY,
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
@@ -89,14 +91,23 @@ static void prv_trigger_handler(const struct device *dev, const struct sensor_tr
 	}
 }
 
+/*
+ * @brief Detect if the device is stationary based on the magnitude of the acceleration vector.
+ *
+ * Checks if the magnitude of the acceleration vector stays within a defined tolerance range around
+ * the target gravity threshold window for a sustained duration defined by STATIONARY_WINDOW_MS.
+ * When the device is detected to be stationary, it gives the stationary semaphore.
+ *
+ * @param magnitude The magnitude of the acceleration vector.
+ */
 static void prv_detect_stationary(const float magnitude)
 {
 	static uint32_t still_start_time = 0;
 	static bool was_still = false;
 
 	/* Evaluate if magnitude falls within resting gravity tolerance window */
-	bool is_currently_still = (magnitude >= (G_TARGET - STATIONARY_TOLERANCE)) &&
-				  (magnitude <= (G_TARGET + STATIONARY_TOLERANCE));
+	bool is_currently_still = (magnitude >= (prv_g_target - STATIONARY_TOLERANCE)) &&
+				  (magnitude <= (prv_g_target + STATIONARY_TOLERANCE));
 
 	if (is_currently_still) {
 		if (!was_still) {
@@ -154,20 +165,78 @@ static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 
 		k_mutex_unlock(&sensor_mutex);
 
-		double x = accel_val[0].val1 + (accel_val[0].val2 / 1000000.0);
-		double y = accel_val[1].val1 + (accel_val[1].val2 / 1000000.0);
-		double z = accel_val[2].val1 + (accel_val[2].val2 / 1000000.0);
+		double x = sensor_value_to_double(&accel_val[0]);
+		double y = sensor_value_to_double(&accel_val[1]);
+		double z = sensor_value_to_double(&accel_val[2]);
 		float magnitude = (float)sqrt((x * x) + (y * y) + (z * z));
 
 		prv_detect_stationary(magnitude);
 	}
 }
 
+/*
+ * @brief Calibrate the baseline gravity by averaging a number of samples while the device is
+ * stationary.
+ *
+ * This function takes a defined number of samples (20) of the acceleration vector while the device
+ * is stationary and calculates the average magnitude. This average is then set as the new baseline
+ * gravity target (prv_g_target). If no valid samples are obtained, the function falls back to the
+ * default gravity target defined in Kconfig.
+ */
+static void prv_calibrate_resting_g(void)
+{
+	LOG_INF("Calibrating baseline gravity. Keep device still");
+
+	double sum_magnitude = 0.0;
+	const uint8_t samples = 20;
+	uint8_t valid_samples = 0;
+
+	for (int i = 0; i < samples; i++) {
+		k_mutex_lock(&sensor_mutex, K_FOREVER);
+		if (sensor_sample_fetch_chan(prv_acc, SENSOR_CHAN_ACCEL_XYZ) == 0) {
+			struct sensor_value accel_val[3];
+			sensor_channel_get(prv_acc, SENSOR_CHAN_ACCEL_XYZ, accel_val);
+
+			double x = sensor_value_to_double(&accel_val[0]);
+			double y = sensor_value_to_double(&accel_val[1]);
+			double z = sensor_value_to_double(&accel_val[2]);
+
+			sum_magnitude += sqrt((x * x) + (y * y) + (z * z));
+			valid_samples++;
+		}
+		k_mutex_unlock(&sensor_mutex);
+		k_msleep(10);
+	}
+
+	if (valid_samples == 0) {
+		prv_g_target = ((float)CONFIG_FLIGHT_G_TARGET_X100 / 100.0f);
+		LOG_WRN("Calibration failed! Using Kconfig default: %.3f m/s^2",
+			(double)prv_g_target);
+		return;
+	}
+
+	prv_g_target = (float)(sum_magnitude / valid_samples);
+	LOG_INF("Calibration complete. baseline G set to: %.3f m/s^2", (double)prv_g_target);
+}
+
+/*
+ * @brief State machine for flight detection and BLE advertising.
+ *
+ * The state machine has three states:
+ * 1. STATE_IDLE: The device is waiting for motion to be detected. Once motion is detected, it
+ * transitions to STATE_FLIGHT.
+ * 2. STATE_FLIGHT: The device is in flight and waiting for the device to become stationary. Once
+ * stationary, it transitions to STATE_LANDED.
+ * 3. STATE_LANDED: The device has landed and starts BLE advertising. After a defined advertisement
+ * time, it stops advertising and transitions back to STATE_IDLE.
+ */
 static void prv_state_machine(void)
 {
 	switch (prv_flight_state) {
 	case STATE_IDLE:
 		LOG_INF("State 0: Idle");
+
+		prv_calibrate_resting_g();
 
 		k_mutex_lock(&sensor_mutex, K_FOREVER);
 		sensor_trigger_set(prv_acc, &motion_trig, prv_trigger_handler);
