@@ -54,11 +54,12 @@ struct sensor_trigger motion_trig = {
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
 };
 
+/* 2B Dummy ID, 1B launch count + 2B max altitude */
+static uint8_t prv_adv_data[5] = {0xFF, 0xFF, 0x00, 0x00, 0x00};
 static struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
 	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, (sizeof(CONFIG_BT_DEVICE_NAME) - 1)),
-	/* Append launch count as 2 bytes */
-	BT_DATA(BT_DATA_MANUFACTURER_DATA, (uint8_t *)&prv_launch_count, sizeof(prv_launch_count)),
+	BT_DATA(BT_DATA_MANUFACTURER_DATA, prv_adv_data, sizeof(prv_adv_data)),
 };
 /**
  * @brief Print firmware version and other useful information.
