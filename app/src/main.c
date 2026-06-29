@@ -238,6 +238,8 @@ static void prv_state_machine(void)
 
 		prv_calibrate_resting_g();
 
+		prv_calibrate_resting_g();
+
 		k_mutex_lock(&sensor_mutex, K_FOREVER);
 		sensor_trigger_set(prv_acc, &motion_trig, prv_trigger_handler);
 		k_mutex_unlock(&sensor_mutex);
