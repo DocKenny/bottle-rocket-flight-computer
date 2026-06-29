@@ -44,8 +44,6 @@ static enum flight_state_t prv_flight_state = STATE_IDLE;
 
 static uint16_t prv_launch_count = 0;
 
-static uint16_t prv_launch_count = 0;
-
 struct sensor_trigger data_trig = {
 	.type = SENSOR_TRIG_DATA_READY,
 	.chan = SENSOR_CHAN_ACCEL_XYZ,
@@ -165,7 +163,6 @@ static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 	}
 }
 
-static uint8_t flight_state = STATE_IDLE;
 static void prv_state_machine(void)
 {
 	switch (prv_flight_state) {
