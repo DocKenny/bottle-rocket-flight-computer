@@ -17,8 +17,6 @@
 
 LOG_MODULE_REGISTER(main);
 
-#define SLEEP_TIME_MS (2 * MSEC_PER_SEC)
-
 #define LIS2DW12_REG_CTRL7 0x3F
 
 enum flight_state_t {
@@ -42,9 +40,21 @@ static const struct device *prv_acc = DEVICE_DT_GET(DT_ALIAS(accel0));
 
 static enum flight_state_t prv_flight_state = STATE_IDLE;
 
-static uint16_t prv_launch_count = 0;
+static uint8_t prv_launch_count = 0;
 
-static float prv_g_target = ((float)CONFIG_FLIGHT_G_TARGET_X100 / 100.0f);
+static float current_velocity = 0.0f;
+static float current_altitude = 0.0f;
+static float max_altitude = 0.0f;
+
+static float prv_g_target = G_TARGET;
+
+struct vec3f {
+	float x;
+	float y;
+	float z;
+};
+
+static struct vec3f prv_g_vector = {0.0f, 0.0f, 0.0f};
 
 struct sensor_trigger data_trig = {
 	.type = SENSOR_TRIG_DATA_READY,
@@ -131,17 +141,45 @@ static void prv_detect_stationary(const float magnitude)
 	was_still = false;
 }
 
+static void prv_calculate_max_altitude(struct vec3f current_acc, const float delta_time)
+{
+	/* Vector Dot Product */
+	float dot_product = (current_acc.x * prv_g_vector.x) + (current_acc.y * prv_g_vector.y) +
+			    (current_acc.z * prv_g_vector.z);
+
+	/* Project current acceleration along the gravity vector line */
+	float projected_g = dot_product / prv_g_target;
+
+	/* Subtract gravity magnitude */
+	float true_acceleration = projected_g - prv_g_target;
+
+	/* Dead-band filter to prevent stationary drift */
+	if (fabsf(true_acceleration) < 0.15f) {
+		true_acceleration = 0.0f;
+	}
+
+	/* Double Integration */
+	current_velocity += true_acceleration * delta_time;
+	current_altitude += current_velocity * delta_time;
+
+	if (current_altitude > max_altitude) {
+		max_altitude = current_altitude;
+	}
+}
+
 static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 {
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
+	uint32_t last_cycle_count = 0;
 	LOG_INF("DATA PROCESSING THREAD");
 	while (true) {
 		// Keep the thread entirely asleep if the state machine is not in STATE_FLIGHT
 		if (prv_flight_state != STATE_FLIGHT) {
 			k_msleep(50);
+			last_cycle_count = 0;
 			continue;
 		}
 
@@ -150,6 +188,17 @@ static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 		// Double check state inside case of race condition during context switch
 		if (prv_flight_state != STATE_FLIGHT) {
 			continue;
+		}
+
+		uint32_t current_cycle_count = k_cycle_get_32();
+		uint32_t delta_cycles = current_cycle_count - last_cycle_count;
+		last_cycle_count = current_cycle_count;
+
+		float delta_time = (float)k_cyc_to_ns_near32(delta_cycles) / 1000000000.0f;
+
+		if (delta_time > 0.05f || delta_time <= 0.0f) {
+			/* 800Hz window fallback for the first frame */
+			delta_time = 0.00125f;
 		}
 
 		k_mutex_lock(&sensor_mutex, K_FOREVER);
@@ -166,10 +215,15 @@ static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 
 		k_mutex_unlock(&sensor_mutex);
 
-		double x = sensor_value_to_double(&accel_val[0]);
-		double y = sensor_value_to_double(&accel_val[1]);
-		double z = sensor_value_to_double(&accel_val[2]);
-		float magnitude = (float)sqrt((x * x) + (y * y) + (z * z));
+		struct vec3f current_acc = {.x = (float)sensor_value_to_double(&accel_val[0]),
+					    .y = (float)sensor_value_to_double(&accel_val[1]),
+					    .z = (float)sensor_value_to_double(&accel_val[2])};
+
+		float magnitude =
+			sqrtf((current_acc.x * current_acc.x) + (current_acc.y * current_acc.y) +
+			      (current_acc.z * current_acc.z));
+
+		prv_calculate_max_altitude(current_acc, delta_time);
 
 		prv_detect_stationary(magnitude);
 	}
@@ -188,7 +242,7 @@ static void prv_calibrate_resting_g(void)
 {
 	LOG_INF("Calibrating baseline gravity. Keep device still");
 
-	double sum_magnitude = 0.0;
+	double sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
 	const uint8_t samples = 20;
 	uint8_t valid_samples = 0;
 
@@ -198,11 +252,10 @@ static void prv_calibrate_resting_g(void)
 			struct sensor_value accel_val[3];
 			sensor_channel_get(prv_acc, SENSOR_CHAN_ACCEL_XYZ, accel_val);
 
-			double x = sensor_value_to_double(&accel_val[0]);
-			double y = sensor_value_to_double(&accel_val[1]);
-			double z = sensor_value_to_double(&accel_val[2]);
+			sum_x = sensor_value_to_double(&accel_val[0]);
+			sum_y = sensor_value_to_double(&accel_val[1]);
+			sum_z = sensor_value_to_double(&accel_val[2]);
 
-			sum_magnitude += sqrt((x * x) + (y * y) + (z * z));
 			valid_samples++;
 		}
 		k_mutex_unlock(&sensor_mutex);
@@ -210,13 +263,22 @@ static void prv_calibrate_resting_g(void)
 	}
 
 	if (valid_samples == 0) {
-		prv_g_target = ((float)CONFIG_FLIGHT_G_TARGET_X100 / 100.0f);
-		LOG_WRN("Calibration failed! Using Kconfig default: %.3f m/s^2",
-			(double)prv_g_target);
+		prv_g_vector.x = 0.0f;
+		prv_g_vector.y = 0.0f;
+		prv_g_vector.z = ((float)CONFIG_FLIGHT_G_TARGET_X100 / 100.0f);
+		prv_g_target = prv_g_vector.z;
 		return;
 	}
+	prv_g_vector.x = (float)(sum_x / valid_samples);
+	prv_g_vector.y = (float)(sum_y / valid_samples);
+	prv_g_vector.z = (float)(sum_z / valid_samples);
 
-	prv_g_target = (float)(sum_magnitude / valid_samples);
+	prv_g_target = sqrtf((prv_g_vector.x * prv_g_vector.x) + (prv_g_vector.y * prv_g_vector.y) +
+			     (prv_g_vector.z * prv_g_vector.z));
+	LOG_INF("3D Baseline G Vector: [%.2f, %.2f, %.2f] Magnitude: %.3f m/s^2",
+		(double)prv_g_vector.x, (double)prv_g_vector.y, (double)prv_g_vector.z,
+		(double)prv_g_target);
+
 	LOG_INF("Calibration complete. baseline G set to: %.3f m/s^2", (double)prv_g_target);
 }
 
@@ -239,8 +301,6 @@ static void prv_state_machine(void)
 
 		prv_calibrate_resting_g();
 
-		prv_calibrate_resting_g();
-
 		k_mutex_lock(&sensor_mutex, K_FOREVER);
 		sensor_trigger_set(prv_acc, &motion_trig, prv_trigger_handler);
 		k_mutex_unlock(&sensor_mutex);
@@ -255,6 +315,12 @@ static void prv_state_machine(void)
 		k_mutex_unlock(&sensor_mutex);
 
 		prv_launch_count++;
+		prv_adv_data[2] = prv_launch_count;
+
+		current_velocity = 0.0f;
+		current_altitude = 0.0f;
+		max_altitude = 0.0f;
+
 		prv_flight_state = STATE_FLIGHT;
 
 		break;
@@ -275,10 +341,17 @@ static void prv_state_machine(void)
 		sensor_trigger_set(prv_acc, &data_trig, NULL);
 		k_mutex_unlock(&sensor_mutex);
 
+		LOG_INF("Flight completed. Max recorded altitude: %.2f meters",
+			(double)max_altitude);
 		prv_flight_state = STATE_LANDED;
 		break;
 	case STATE_LANDED:
 		LOG_INF("State 2: Landed");
+
+		uint16_t alt_cm = (uint16_t)(max_altitude * 100.0f);
+
+		prv_adv_data[3] = (uint8_t)(alt_cm & 0xFF);
+		prv_adv_data[4] = (uint8_t)((alt_cm >> 8) & 0xFF);
 
 		int err = bt_le_adv_start(BT_LE_ADV_NCONN, ad, ARRAY_SIZE(ad), NULL, 0);
 		if (err) {
