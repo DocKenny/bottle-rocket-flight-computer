@@ -162,9 +162,9 @@ static void prv_data_processing_thread(void *arg1, void *arg2, void *arg3)
 	}
 }
 
-static uint8_t flight_state = STATE_IDLE;
 static void prv_state_machine(void)
 {
+	static uint8_t flight_state = STATE_IDLE;
 
 	switch (flight_state) {
 	case STATE_IDLE:
